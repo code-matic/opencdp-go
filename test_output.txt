@@ -1,0 +1,55 @@
+=== RUN   TestIdentify_Success
+time=2026-01-16T18:23:12.521+01:00 level=DEBUG msg="Identifying user" userId=user_123
+time=2026-01-16T18:23:12.524+01:00 level=DEBUG msg="Closing CDP client resources"
+--- PASS: TestIdentify_Success (0.00s)
+=== RUN   TestTrack_Success
+--- PASS: TestTrack_Success (0.00s)
+=== RUN   TestSendEmail_Success
+--- PASS: TestSendEmail_Success (0.00s)
+=== RUN   TestSendPush_Success
+--- PASS: TestSendPush_Success (0.00s)
+=== RUN   TestSendSms_Success
+--- PASS: TestSendSms_Success (0.00s)
+=== RUN   TestPing_Success
+--- PASS: TestPing_Success (0.00s)
+=== RUN   TestIdentify_ValidationError_EmptyID
+time=2026-01-16T18:23:12.527+01:00 level=ERROR msg="Validation failed for Identify" error="[VALIDATION_ERROR] identifier cannot be empty"
+--- PASS: TestIdentify_ValidationError_EmptyID (0.00s)
+=== RUN   TestSendEmail_ValidationError_InvalidEmail
+time=2026-01-16T18:23:12.527+01:00 level=ERROR msg="Validation failed for SendEmail (To)" error="[VALIDATION_ERROR] invalid email format: invalid-email"
+--- PASS: TestSendEmail_ValidationError_InvalidEmail (0.00s)
+=== RUN   TestSendSms_ValidationError_InvalidPhone
+time=2026-01-16T18:23:13.082+01:00 level=ERROR msg="SendSms failed" error="[SMS_ERROR] Failed to send SMS: API error 404: {\"success\":false,\"message\":\"Not found\"}"
+    client_test.go:187: 
+        	Error Trace:	/Users/yereka/Development/codematic/projects/sdk_agent/cdp-go-sdk-fresh/cdp/client_test.go:187
+        	Error:      	"[API_ERROR] SendSms failed: [SMS_ERROR] Failed to send SMS: API error 404: {\"success\":false,\"message\":\"Not found\"}" does not contain "invalid phone number format"
+        	Test:       	TestSendSms_ValidationError_InvalidPhone
+--- FAIL: TestSendSms_ValidationError_InvalidPhone (0.55s)
+=== RUN   TestTrack_ValidationError_EmptyEvent
+time=2026-01-16T18:23:13.082+01:00 level=ERROR msg="Validation failed for Track (eventName)" error="[VALIDATION_ERROR] event name cannot be empty"
+--- PASS: TestTrack_ValidationError_EmptyEvent (0.00s)
+=== RUN   TestConfiguration_FailOnException_True
+time=2026-01-16T18:23:13.084+01:00 level=ERROR msg="CDP Identify failed" error="API error 500: "
+--- PASS: TestConfiguration_FailOnException_True (0.00s)
+=== RUN   TestConfiguration_FailOnException_False
+time=2026-01-16T18:23:13.085+01:00 level=ERROR msg="CDP Identify failed" error="API error 500: "
+--- PASS: TestConfiguration_FailOnException_False (0.00s)
+=== RUN   TestConfiguration_Timeout
+time=2026-01-16T18:23:13.096+01:00 level=ERROR msg="CDP Identify failed" error="Post \"http://127.0.0.1:52440/identify\": context deadline exceeded (Client.Timeout exceeded while awaiting headers)"
+--- PASS: TestConfiguration_Timeout (0.10s)
+=== RUN   TestDualWrite_Enabled
+time=2026-01-16T18:23:13.737+01:00 level=WARN msg="Customer.io Identify failed" error="401: https://track.customer.io/api/v1/customers/u1 {\n  \"meta\": {\n    \"error\": \"Unauthorized request\"\n  }\n}\n"
+time=2026-01-16T18:23:13.970+01:00 level=WARN msg="Customer.io Identify failed" error="401: https://track.customer.io/api/v1/customers/u1 {\n  \"meta\": {\n    \"error\": \"Unauthorized request\"\n  }\n}\n"
+--- PASS: TestDualWrite_Enabled (0.78s)
+=== RUN   TestDualWrite_Disabled
+--- PASS: TestDualWrite_Disabled (0.00s)
+=== RUN   TestEdgeCase_EmptyProperties
+--- PASS: TestEdgeCase_EmptyProperties (0.00s)
+=== RUN   TestEdgeCase_NullValues
+--- PASS: TestEdgeCase_NullValues (0.00s)
+=== RUN   TestClose_Resources
+--- PASS: TestClose_Resources (0.00s)
+FAIL
+FAIL	github.com/codematic/cdp-go/cdp	2.018s
+?   	github.com/codematic/cdp-go/cmd/sample	[no test files]
+FAIL
