@@ -11,16 +11,16 @@ import (
 )
 
 const (
-	defaultBaseURL               = "https://api.opencdp.io/gateway/data-gateway"
 	defaultTimeout               = 10000
 	defaultMaxConcurrentRequests = 10
 	maxAllowedConcurrentRequests = 30
-	version                      = "0.1.0"
+	version                      = "0.2.0"
 )
 
 // Client is the main entry point for the CDP SDK.
 type Client struct {
 	config     CDPConfig
+	baseURLs   []string
 	httpClient *http.Client
 	logger     *Logger
 	cio        *CIOIntegration
@@ -29,9 +29,6 @@ type Client struct {
 
 // NewClient creates a new CDP Client instance.
 func NewClient(config CDPConfig) *Client {
-	if config.CDPEndpoint == "" {
-		config.CDPEndpoint = defaultBaseURL
-	}
 	if config.Timeout <= 0 {
 		config.Timeout = defaultTimeout
 	}
@@ -42,6 +39,7 @@ func NewClient(config CDPConfig) *Client {
 		config.MaxConcurrentRequests = maxAllowedConcurrentRequests
 	}
 
+	baseURLs := ResolveAllBaseURLs(config.CDPEndpoint, config.CDPFallbackEndpoints)
 	logger := NewLogger(config.Logger, config.Debug)
 
 	transport := &http.Transport{
@@ -57,6 +55,7 @@ func NewClient(config CDPConfig) *Client {
 
 	return &Client{
 		config:     config,
+		baseURLs:   baseURLs,
 		httpClient: httpClient,
 		logger:     logger,
 		cio:        NewCIOIntegration(&config),
@@ -74,50 +73,39 @@ func (c *Client) Close() {
 }
 
 // Ping checks the health of the CDP connection.
-// GET /v1/health/ping
 func (c *Client) Ping(ctx context.Context) error {
 	c.logger.Debug("Pinging CDP service")
-	req, err := http.NewRequestWithContext(ctx, "GET", c.config.CDPEndpoint+"/v1/health/ping", nil)
-	if err != nil {
-		return c.handleError(ctx, err, "Failed to create ping request")
-	}
-
-	resp, err := c.doRequest(req)
+	resp, err := c.requestWithFailover(ctx, "GET", "/v1/health/ping", nil)
 	if err != nil {
 		return c.handleError(ctx, err, "Ping request failed")
 	}
 	defer resp.Body.Close()
-
 	if resp.StatusCode != http.StatusOK {
 		return c.handleError(ctx, fmt.Errorf("unexpected status code: %d", resp.StatusCode), "Ping failed")
 	}
-
 	return nil
 }
 
 // Identify sends user identification data to the CDP and optionally to Customer.io.
-func (c *Client) Identify(ctx context.Context, userID string, traits map[string]interface{}) error {
-	if err := validateIdentifier(userID); err != nil {
+func (c *Client) Identify(ctx context.Context, identifier string, properties map[string]interface{}) error {
+	if err := validateIdentifier(identifier); err != nil {
 		return c.handleError(ctx, err, "Validation failed for Identify")
 	}
 
 	payload := IdentifyPayload{
-		UserID: userID,
-		Traits: traits,
+		Identifier: identifier,
+		Properties: properties,
 	}
 
-	c.logger.Debug("Identifying user", "userId", userID)
+	c.logger.Debug("Identifying user", "identifier", identifier)
 
-	// 1. Send to CDP
 	if err := c.post(ctx, "/v1/persons/identify", payload); err != nil {
 		return c.handleError(ctx, err, "CDP Identify failed")
 	}
 
-	// 2. Dual-write to Customer.io (Best effort)
 	if c.config.SendToCustomerIO {
-		if err := c.cio.Identify(userID, traits); err != nil {
+		if err := c.cio.Identify(identifier, properties); err != nil {
 			c.logger.Warn("Customer.io Identify failed", "error", err)
-			// We do not fail the main request if the secondary integration fails, unless strict consistency is required (not implemented here)
 		}
 	}
 
@@ -125,9 +113,9 @@ func (c *Client) Identify(ctx context.Context, userID string, traits map[string]
 }
 
 // Track sends an event to the CDP and optionally to Customer.io.
-func (c *Client) Track(ctx context.Context, userID string, eventName string, properties map[string]interface{}) error {
-	if err := validateIdentifier(userID); err != nil {
-		return c.handleError(ctx, err, "Validation failed for Track (userId)")
+func (c *Client) Track(ctx context.Context, identifier string, eventName string, properties map[string]interface{}) error {
+	if err := validateIdentifier(identifier); err != nil {
+		return c.handleError(ctx, err, "Validation failed for Track (identifier)")
 	}
 	if err := validateEventName(eventName); err != nil {
 		return c.handleError(ctx, err, "Validation failed for Track (eventName)")
@@ -137,21 +125,19 @@ func (c *Client) Track(ctx context.Context, userID string, eventName string, pro
 	}
 
 	payload := TrackPayload{
-		UserID:     userID,
+		Identifier: identifier,
 		EventName:  eventName,
 		Properties: properties,
 	}
 
-	c.logger.Debug("Tracking event", "userId", userID, "event", eventName)
+	c.logger.Debug("Tracking event", "identifier", identifier, "eventName", eventName)
 
-	// 1. Send to CDP
 	if err := c.post(ctx, "/v1/persons/track", payload); err != nil {
 		return c.handleError(ctx, err, "CDP Track failed")
 	}
 
-	// 2. Dual-write to Customer.io
 	if c.config.SendToCustomerIO {
-		if err := c.cio.Track(userID, eventName, properties); err != nil {
+		if err := c.cio.Track(identifier, eventName, properties); err != nil {
 			c.logger.Warn("Customer.io Track failed", "error", err)
 		}
 	}
@@ -161,27 +147,24 @@ func (c *Client) Track(ctx context.Context, userID string, eventName string, pro
 
 // RegisterDevice registers a device for push notifications.
 func (c *Client) RegisterDevice(ctx context.Context, payload DevicePayload) error {
-	if err := validateIdentifier(payload.UserID); err != nil {
+	if err := validateIdentifier(payload.Identifier); err != nil {
 		return c.handleError(ctx, err, "Validation failed for RegisterDevice")
 	}
 	if payload.DeviceID == "" {
 		return c.handleError(ctx, NewCDPValidationError("device ID required"), "Validation failed")
 	}
-	if payload.DeviceToken == "" {
-		return c.handleError(ctx, NewCDPValidationError("device token required"), "Validation failed")
+	if payload.FcmToken == "" && payload.ApnToken == "" {
+		return c.handleError(ctx, NewCDPValidationError("fcmToken or apnToken required"), "Validation failed")
 	}
 
-	c.logger.Debug("Registering device", "userId", payload.UserID, "deviceId", payload.DeviceID)
+	c.logger.Debug("Registering device", "identifier", payload.Identifier, "deviceId", payload.DeviceID)
 
-	// 1. Dual-write to Customer.io (Best effort) - uses DeviceID as the stable identifier
 	if c.config.SendToCustomerIO {
-		if err := c.cio.AddDevice(payload.UserID, payload.DeviceID, payload.Platform, payload.Attributes); err != nil {
+		if err := c.cio.AddDevice(payload.Identifier, payload.DeviceID, payload.Platform, payload.Attributes); err != nil {
 			c.logger.Warn("Customer.io AddDevice failed", "error", err)
 		}
 	}
 
-	// 2. Send to CDP
-	// Assuming /v1/persons/registerDevice endpoint
 	if err := c.post(ctx, "/v1/persons/registerDevice", payload); err != nil {
 		return c.handleError(ctx, err, "RegisterDevice failed")
 	}
@@ -189,36 +172,67 @@ func (c *Client) RegisterDevice(ctx context.Context, payload DevicePayload) erro
 	return nil
 }
 
-// Internal helper to perform POST requests
 func (c *Client) post(ctx context.Context, path string, body interface{}) error {
-	jsonBody, err := json.Marshal(body)
-	if err != nil {
-		return fmt.Errorf("failed to marshal body: %w", err)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, "POST", c.config.CDPEndpoint+path, bytes.NewBuffer(jsonBody))
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := c.doRequest(req)
+	resp, err := c.requestWithFailover(ctx, "POST", path, body)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
-
 	if resp.StatusCode >= 400 {
 		bodyBytes, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("API error %d: %s", resp.StatusCode, string(bodyBytes))
 	}
-
 	return nil
 }
 
-// doRequest executes the HTTP request with concurrency control and headers.
+func (c *Client) requestWithFailover(ctx context.Context, method, path string, body interface{}) (*http.Response, error) {
+	var jsonBody []byte
+	var err error
+	if body != nil {
+		jsonBody, err = json.Marshal(body)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal body: %w", err)
+		}
+	}
+
+	var lastErr error
+	for _, baseURL := range c.baseURLs {
+		var reader io.Reader
+		if jsonBody != nil {
+			reader = bytes.NewBuffer(jsonBody)
+		}
+		req, err := http.NewRequestWithContext(ctx, method, baseURL+path, reader)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create request: %w", err)
+		}
+		if jsonBody != nil {
+			req.Header.Set("Content-Type", "application/json")
+		}
+		resp, err := c.doRequest(req)
+		if err != nil {
+			lastErr = err
+			if c.config.Debug {
+				c.logger.Debug("Gateway unreachable", "baseURL", baseURL, "error", err)
+			}
+			continue
+		}
+		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+			return resp, nil
+		}
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		lastErr = fmt.Errorf("API error %d: %s", resp.StatusCode, string(bodyBytes))
+		if c.config.Debug {
+			c.logger.Debug("Gateway returned error, trying next host", "baseURL", baseURL, "status", resp.StatusCode)
+		}
+	}
+	if lastErr == nil {
+		lastErr = fmt.Errorf("no gateway hosts configured")
+	}
+	return nil, lastErr
+}
+
 func (c *Client) doRequest(req *http.Request) (*http.Response, error) {
-	// Acquire semaphore
 	select {
 	case c.semaphore <- struct{}{}:
 		defer func() { <-c.semaphore }()
@@ -226,13 +240,12 @@ func (c *Client) doRequest(req *http.Request) (*http.Response, error) {
 		return nil, req.Context().Err()
 	}
 
-	req.Header.Set("Authorization", "Bearer "+c.config.CDPAPIKey)
+	req.Header.Set("Authorization", c.config.CDPAPIKey)
 	req.Header.Set("User-Agent", fmt.Sprintf("opencdp-go-sdk/%s", version))
 
 	return c.httpClient.Do(req)
 }
 
-// handleError processes errors based on FailOnException config.
 func (c *Client) handleError(ctx context.Context, err error, msg string) error {
 	c.logger.LogError(ctx, err, msg)
 	if c.config.FailOnException {

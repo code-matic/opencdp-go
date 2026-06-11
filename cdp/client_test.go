@@ -37,8 +37,8 @@ func TestIdentify_Success(t *testing.T) {
 		var payload cdp.IdentifyPayload
 		err := json.NewDecoder(r.Body).Decode(&payload)
 		assert.NoError(t, err)
-		assert.Equal(t, "user_123", payload.UserID)
-		assert.Equal(t, "Alice", payload.Traits["name"])
+		assert.Equal(t, "user_123", payload.Identifier)
+		assert.Equal(t, "Alice", payload.Properties["name"])
 
 		w.WriteHeader(http.StatusOK)
 	})
@@ -64,7 +64,7 @@ func TestTrack_Success(t *testing.T) {
 		var payload cdp.TrackPayload
 		err := json.NewDecoder(r.Body).Decode(&payload)
 		assert.NoError(t, err)
-		assert.Equal(t, "user_123", payload.UserID)
+		assert.Equal(t, "user_123", payload.Identifier)
 		assert.Equal(t, "purchase", payload.EventName)
 
 		w.WriteHeader(http.StatusOK)
@@ -321,7 +321,7 @@ func TestEdgeCase_NullValues(t *testing.T) {
 	server := setupMockServer(t, func(w http.ResponseWriter, r *http.Request) {
 		var payload cdp.IdentifyPayload
 		json.NewDecoder(r.Body).Decode(&payload)
-		assert.Nil(t, payload.Traits)
+		assert.Nil(t, payload.Properties)
 		w.WriteHeader(http.StatusOK)
 	})
 	defer server.Close()

@@ -8,6 +8,8 @@ type CDPConfig struct {
 	CDPAPIKey string
 	// Optional custom endpoint (defaults to production)
 	CDPEndpoint string
+	// Optional fallback gateway base URLs
+	CDPFallbackEndpoints []string
 
 	// Request timeout in milliseconds (default: 10000)
 	Timeout int
@@ -42,14 +44,14 @@ type Identifiers struct {
 
 // IdentifyPayload represents the data for an identify call.
 type IdentifyPayload struct {
-	UserID string                 `json:"userId"`
-	Traits map[string]interface{} `json:"traits"`
+	Identifier string                 `json:"identifier"`
+	Properties map[string]interface{} `json:"properties"`
 }
 
 // TrackPayload represents the data for a track call.
 type TrackPayload struct {
-	UserID     string                 `json:"userId"`
-	EventName  string                 `json:"event"`
+	Identifier string                 `json:"identifier"`
+	EventName  string                 `json:"eventName"`
 	Properties map[string]interface{} `json:"properties"`
 }
 
@@ -103,15 +105,15 @@ type SmsPayload struct {
 
 // DevicePayload represents data for registering a device.
 type DevicePayload struct {
-	UserID       string                 `json:"userId"`
-	DeviceID     string                 `json:"device_id"`                // Unique device identifier (stable across token refreshes)
-	Platform     string                 `json:"platform"`                 // "android", "ios", or "web"
-	DeviceToken  string                 `json:"device_token"`             // FCM/APNS push token
-	Name         string                 `json:"name,omitempty"`           // Device name
-	OSVersion    string                 `json:"os_version,omitempty"`     // Operating system version
-	Model        string                 `json:"model,omitempty"`          // Device model
-	AppVersion   string                 `json:"app_version,omitempty"`    // Application version
-	LastActiveAt string                 `json:"last_active_at,omitempty"` // Last active timestamp
-	APNToken     string                 `json:"apn_token,omitempty"`      // Apple Push Notification token (iOS)
+	Identifier   string                 `json:"identifier"`
+	DeviceID     string                 `json:"deviceId"`
+	Platform     string                 `json:"platform"`
+	FcmToken     string                 `json:"fcmToken,omitempty"`
+	ApnToken     string                 `json:"apnToken,omitempty"`
+	Name         string                 `json:"name,omitempty"`
+	OSVersion    string                 `json:"osVersion,omitempty"`
+	Model        string                 `json:"model,omitempty"`
+	AppVersion   string                 `json:"appVersion,omitempty"`
+	LastActiveAt string                 `json:"last_active_at,omitempty"`
 	Attributes   map[string]interface{} `json:"attributes,omitempty"`
 }
