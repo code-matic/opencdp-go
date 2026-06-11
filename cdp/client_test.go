@@ -23,7 +23,7 @@ func defaultHandler(t *testing.T, expectedPath string, expectedMethod string) ht
 		assert.Equal(t, expectedPath, r.URL.Path)
 		assert.Equal(t, expectedMethod, r.Method)
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"success": true}`))
+		_, _ = w.Write([]byte(`{"success": true}`))
 	}
 }
 
@@ -304,7 +304,8 @@ func TestDualWrite_Disabled(t *testing.T) {
 func TestEdgeCase_EmptyProperties(t *testing.T) {
 	server := setupMockServer(t, func(w http.ResponseWriter, r *http.Request) {
 		var payload cdp.TrackPayload
-		json.NewDecoder(r.Body).Decode(&payload)
+		err := json.NewDecoder(r.Body).Decode(&payload)
+		assert.NoError(t, err)
 		assert.Empty(t, payload.Properties)
 		w.WriteHeader(http.StatusOK)
 	})
@@ -320,7 +321,8 @@ func TestEdgeCase_EmptyProperties(t *testing.T) {
 func TestEdgeCase_NullValues(t *testing.T) {
 	server := setupMockServer(t, func(w http.ResponseWriter, r *http.Request) {
 		var payload cdp.IdentifyPayload
-		json.NewDecoder(r.Body).Decode(&payload)
+		err := json.NewDecoder(r.Body).Decode(&payload)
+		assert.NoError(t, err)
 		assert.Nil(t, payload.Properties)
 		w.WriteHeader(http.StatusOK)
 	})
