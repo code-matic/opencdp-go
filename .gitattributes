@@ -1,0 +1,5 @@
+/cmd/ export-ignore
+/test_output.txt export-ignore
+/CONTRIBUTING.md export-ignore
+/DEPLOYMENT.md export-ignore
+/.github/ export-ignore
