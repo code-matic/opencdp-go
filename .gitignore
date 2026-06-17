@@ -21,3 +21,7 @@ go.work
 .idea/
 .vscode/
 *.swp
+
+# OS / dev artifacts
+.DS_Store
+test_output.txt
