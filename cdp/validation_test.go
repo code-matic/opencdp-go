@@ -19,7 +19,7 @@ func defaultHandlerForValidation(t *testing.T, expectedPath string, expectedMeth
 		assert.Equal(t, expectedPath, r.URL.Path)
 		assert.Equal(t, expectedMethod, r.Method)
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"success": true}`))
+		_, _ = w.Write([]byte(`{"success": true}`))
 	}
 }
 

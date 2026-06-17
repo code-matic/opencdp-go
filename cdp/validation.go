@@ -145,12 +145,6 @@ func validateSendEmailRequest(payload EmailPayload) error {
 		return NewCDPValidationError("plaintext_body cannot be empty if provided")
 	}
 
-	// Validate headers if provided
-	if payload.Headers != nil {
-		// Headers should be a map (already enforced by type)
-		// Could add additional validation here if needed
-	}
-
 	// Type guard to check if it's a template-based request
 	isTemplateRequest := payload.TransactionalMessageID != ""
 
