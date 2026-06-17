@@ -3,12 +3,12 @@ package cdp
 import "strings"
 
 const (
-	defaultPrimaryBaseURL = "https://api.opencdp.com/gateway/data-gateway"
+	defaultPrimaryBaseURL = "https://api.opencdp.io/gateway/data-gateway"
+	backupBaseURLCom      = "https://api.opencdp.com/gateway/data-gateway"
 	backupBaseURLXyz      = "https://api.opencdp.xyz/gateway/data-gateway"
-	backupBaseURLIo       = "https://api.opencdp.io/gateway/data-gateway"
 )
 
-var defaultFallbackBaseURLs = []string{backupBaseURLXyz, backupBaseURLIo}
+var defaultFallbackBaseURLs = []string{backupBaseURLCom, backupBaseURLXyz}
 
 func normalizeBaseURL(url string) string {
 	trimmed := strings.TrimSpace(url)
