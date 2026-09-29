@@ -18,6 +18,13 @@ func setupMockServer(t *testing.T, handler http.HandlerFunc) *httptest.Server {
 	return httptest.NewServer(handler)
 }
 
+// mockConfig returns cfg pointed at a local httptest server with production fallbacks disabled.
+func mockConfig(serverURL string, cfg cdp.CDPConfig) cdp.CDPConfig {
+	cfg.CDPEndpoint = serverURL
+	cfg.CDPFallbackEndpoints = []string{}
+	return cfg
+}
+
 func defaultHandler(t *testing.T, expectedPath string, expectedMethod string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, expectedPath, r.URL.Path)
@@ -44,11 +51,10 @@ func TestIdentify_Success(t *testing.T) {
 	})
 	defer server.Close()
 
-	client := cdp.NewClient(cdp.CDPConfig{
-		CDPEndpoint: server.URL,
-		CDPAPIKey:   "test_key",
-		Debug:       true,
-	})
+	client := cdp.NewClient(mockConfig(server.URL, cdp.CDPConfig{
+		CDPAPIKey: "test_key",
+		Debug:     true,
+	}))
 	defer client.Close()
 
 	err := client.Identify(context.Background(), "user_123", map[string]interface{}{"name": "Alice"})
@@ -71,10 +77,9 @@ func TestTrack_Success(t *testing.T) {
 	})
 	defer server.Close()
 
-	client := cdp.NewClient(cdp.CDPConfig{
-		CDPEndpoint: server.URL,
-		CDPAPIKey:   "test_key",
-	})
+	client := cdp.NewClient(mockConfig(server.URL, cdp.CDPConfig{
+		CDPAPIKey: "test_key",
+	}))
 	defer client.Close()
 
 	err := client.Track(context.Background(), "user_123", "purchase", map[string]interface{}{"price": 99.9})
@@ -93,7 +98,7 @@ func TestSendEmail_Success(t *testing.T) {
 	})
 	defer server.Close()
 
-	client := cdp.NewClient(cdp.CDPConfig{CDPEndpoint: server.URL, CDPAPIKey: "key"})
+	client := cdp.NewClient(mockConfig(server.URL, cdp.CDPConfig{CDPAPIKey: "key"}))
 	defer client.Close()
 
 	payload := cdp.EmailPayload{
@@ -109,7 +114,7 @@ func TestSendPush_Success(t *testing.T) {
 	server := setupMockServer(t, defaultHandler(t, "/v1/send/push", "POST"))
 	defer server.Close()
 
-	client := cdp.NewClient(cdp.CDPConfig{CDPEndpoint: server.URL, CDPAPIKey: "key"})
+	client := cdp.NewClient(mockConfig(server.URL, cdp.CDPConfig{CDPAPIKey: "key"}))
 	defer client.Close()
 
 	payload := cdp.PushPayload{
@@ -125,7 +130,7 @@ func TestSendSms_Success(t *testing.T) {
 	server := setupMockServer(t, defaultHandler(t, "/v1/send/sms", "POST"))
 	defer server.Close()
 
-	client := cdp.NewClient(cdp.CDPConfig{CDPEndpoint: server.URL, CDPAPIKey: "key"})
+	client := cdp.NewClient(mockConfig(server.URL, cdp.CDPConfig{CDPAPIKey: "key"}))
 	defer client.Close()
 
 	payload := cdp.SmsPayload{
@@ -143,7 +148,7 @@ func TestPing_Success(t *testing.T) {
 	})
 	defer server.Close()
 
-	client := cdp.NewClient(cdp.CDPConfig{CDPEndpoint: server.URL})
+	client := cdp.NewClient(mockConfig(server.URL, cdp.CDPConfig{}))
 	defer client.Close()
 
 	err := client.Ping(context.Background())
@@ -206,11 +211,10 @@ func TestConfiguration_FailOnException_True(t *testing.T) {
 	})
 	defer server.Close()
 
-	client := cdp.NewClient(cdp.CDPConfig{
-		CDPEndpoint:     server.URL,
+	client := cdp.NewClient(mockConfig(server.URL, cdp.CDPConfig{
 		CDPAPIKey:       "key",
 		FailOnException: true,
-	})
+	}))
 	defer client.Close()
 
 	err := client.Identify(context.Background(), "u1", nil)
@@ -223,11 +227,10 @@ func TestConfiguration_FailOnException_False(t *testing.T) {
 	})
 	defer server.Close()
 
-	client := cdp.NewClient(cdp.CDPConfig{
-		CDPEndpoint:     server.URL,
+	client := cdp.NewClient(mockConfig(server.URL, cdp.CDPConfig{
 		CDPAPIKey:       "key",
 		FailOnException: false,
-	})
+	}))
 	defer client.Close()
 
 	// Should log error but return nil
@@ -242,12 +245,11 @@ func TestConfiguration_Timeout(t *testing.T) {
 	})
 	defer server.Close()
 
-	client := cdp.NewClient(cdp.CDPConfig{
-		CDPEndpoint:     server.URL,
+	client := cdp.NewClient(mockConfig(server.URL, cdp.CDPConfig{
 		CDPAPIKey:       "key",
 		Timeout:         10, // 10ms timeout
 		FailOnException: true,
-	})
+	}))
 	defer client.Close()
 
 	err := client.Identify(context.Background(), "u1", nil)
@@ -263,15 +265,14 @@ func TestDualWrite_Enabled(t *testing.T) {
 	server := setupMockServer(t, defaultHandler(t, "/v1/persons/identify", "POST"))
 	defer server.Close()
 
-	client := cdp.NewClient(cdp.CDPConfig{
-		CDPEndpoint:      server.URL,
+	client := cdp.NewClient(mockConfig(server.URL, cdp.CDPConfig{
 		CDPAPIKey:        "key",
 		SendToCustomerIO: true,
 		CustomerIO: &cdp.CustomerIOConfig{
 			SiteID: "fake_site_id",
 			APIKey: "fake_api_key",
 		},
-	})
+	}))
 	defer client.Close()
 
 	// This should succeed for CDP. CIO call happens internally; we assume it handles network errors gracefully or we ignore them here.
@@ -288,11 +289,10 @@ func TestDualWrite_Disabled(t *testing.T) {
 	server := setupMockServer(t, defaultHandler(t, "/v1/persons/identify", "POST"))
 	defer server.Close()
 
-	client := cdp.NewClient(cdp.CDPConfig{
-		CDPEndpoint:      server.URL,
+	client := cdp.NewClient(mockConfig(server.URL, cdp.CDPConfig{
 		CDPAPIKey:        "key",
 		SendToCustomerIO: false,
-	})
+	}))
 	defer client.Close()
 
 	err := client.Identify(context.Background(), "u1", nil)
@@ -311,7 +311,7 @@ func TestEdgeCase_EmptyProperties(t *testing.T) {
 	})
 	defer server.Close()
 
-	client := cdp.NewClient(cdp.CDPConfig{CDPEndpoint: server.URL, CDPAPIKey: "key"})
+	client := cdp.NewClient(mockConfig(server.URL, cdp.CDPConfig{CDPAPIKey: "key"}))
 	defer client.Close()
 
 	err := client.Track(context.Background(), "u1", "event", map[string]interface{}{})
@@ -328,7 +328,7 @@ func TestEdgeCase_NullValues(t *testing.T) {
 	})
 	defer server.Close()
 
-	client := cdp.NewClient(cdp.CDPConfig{CDPEndpoint: server.URL, CDPAPIKey: "key"})
+	client := cdp.NewClient(mockConfig(server.URL, cdp.CDPConfig{CDPAPIKey: "key"}))
 	defer client.Close()
 
 	// Passing nil traits

@@ -30,7 +30,7 @@ func TestSendEmail_BCC_Validation(t *testing.T) {
 	})
 	defer server.Close()
 
-	client := cdp.NewClient(cdp.CDPConfig{CDPEndpoint: server.URL, CDPAPIKey: "key", FailOnException: true})
+	client := cdp.NewClient(mockConfig(server.URL, cdp.CDPConfig{CDPAPIKey: "key", FailOnException: true}))
 	defer client.Close()
 
 	// Valid BCC
@@ -64,7 +64,7 @@ func TestSendEmail_CC_Validation(t *testing.T) {
 	})
 	defer server.Close()
 
-	client := cdp.NewClient(cdp.CDPConfig{CDPEndpoint: server.URL, CDPAPIKey: "key", FailOnException: true})
+	client := cdp.NewClient(mockConfig(server.URL, cdp.CDPConfig{CDPAPIKey: "key", FailOnException: true}))
 	defer client.Close()
 
 	// Invalid CC email
@@ -87,7 +87,7 @@ func TestSendEmail_TemplateVsRaw(t *testing.T) {
 	})
 	defer server.Close()
 
-	client := cdp.NewClient(cdp.CDPConfig{CDPEndpoint: server.URL, CDPAPIKey: "key", FailOnException: true})
+	client := cdp.NewClient(mockConfig(server.URL, cdp.CDPConfig{CDPAPIKey: "key", FailOnException: true}))
 	defer client.Close()
 
 	// Template email - should work
@@ -132,7 +132,7 @@ func TestSendEmail_IdentifierValidation(t *testing.T) {
 	})
 	defer server.Close()
 
-	client := cdp.NewClient(cdp.CDPConfig{CDPEndpoint: server.URL, CDPAPIKey: "key", FailOnException: true})
+	client := cdp.NewClient(mockConfig(server.URL, cdp.CDPConfig{CDPAPIKey: "key", FailOnException: true}))
 	defer client.Close()
 
 	// No identifiers - should fail
@@ -174,7 +174,7 @@ func TestSendEmail_FromReplyToValidation(t *testing.T) {
 	})
 	defer server.Close()
 
-	client := cdp.NewClient(cdp.CDPConfig{CDPEndpoint: server.URL, CDPAPIKey: "key", FailOnException: true})
+	client := cdp.NewClient(mockConfig(server.URL, cdp.CDPConfig{CDPAPIKey: "key", FailOnException: true}))
 	defer client.Close()
 
 	// Invalid from email
@@ -209,7 +209,7 @@ func TestSendEmail_SendAtValidation(t *testing.T) {
 	})
 	defer server.Close()
 
-	client := cdp.NewClient(cdp.CDPConfig{CDPEndpoint: server.URL, CDPAPIKey: "key", FailOnException: true})
+	client := cdp.NewClient(mockConfig(server.URL, cdp.CDPConfig{CDPAPIKey: "key", FailOnException: true}))
 	defer client.Close()
 
 	// Negative send_at - should fail
@@ -230,7 +230,7 @@ func TestSendPush_IdentifierValidation(t *testing.T) {
 	server := setupMockServerForValidation(t, defaultHandlerForValidation(t, "/v1/send/push", "POST"))
 	defer server.Close()
 
-	client := cdp.NewClient(cdp.CDPConfig{CDPEndpoint: server.URL, CDPAPIKey: "key", FailOnException: true})
+	client := cdp.NewClient(mockConfig(server.URL, cdp.CDPConfig{CDPAPIKey: "key", FailOnException: true}))
 	defer client.Close()
 
 	// No identifiers - should fail
@@ -256,7 +256,7 @@ func TestSendSms_IdentifierValidation(t *testing.T) {
 	server := setupMockServerForValidation(t, defaultHandlerForValidation(t, "/v1/send/sms", "POST"))
 	defer server.Close()
 
-	client := cdp.NewClient(cdp.CDPConfig{CDPEndpoint: server.URL, CDPAPIKey: "key", FailOnException: true})
+	client := cdp.NewClient(mockConfig(server.URL, cdp.CDPConfig{CDPAPIKey: "key", FailOnException: true}))
 	defer client.Close()
 
 	// No identifiers - should fail

@@ -4,8 +4,8 @@ import "strings"
 
 const (
 	defaultPrimaryBaseURL = "https://api.opencdp.io/gateway/data-gateway"
-	backupBaseURLCom      = "https://api.opencdp.com/gateway/data-gateway"
-	backupBaseURLXyz      = "https://api.opencdp.xyz/gateway/data-gateway"
+	backupBaseURLCom      = "https://api.open-cdp.com/gateway/data-gateway"
+	backupBaseURLXyz      = "https://api.open-cdp.xyz/gateway/data-gateway"
 )
 
 var defaultFallbackBaseURLs = []string{backupBaseURLCom, backupBaseURLXyz}
