@@ -12,8 +12,8 @@ func TestResolveAllBaseURLs_DefaultPrimaryAndFallbacks(t *testing.T) {
 	assert.Equal(t, "https://api.opencdp.io/gateway/data-gateway", urls[0])
 	assert.Equal(t, []string{
 		"https://api.opencdp.io/gateway/data-gateway",
-		"https://api.opencdp.com/gateway/data-gateway",
-		"https://api.opencdp.xyz/gateway/data-gateway",
+		"https://api.open-cdp.com/gateway/data-gateway",
+		"https://api.open-cdp.xyz/gateway/data-gateway",
 	}, urls)
 }
 
@@ -26,11 +26,11 @@ func TestResolveAllBaseURLs_EmptyFallbackSliceUsesPrimaryOnly(t *testing.T) {
 func TestResolveAllBaseURLs_DeduplicatesPrimaryAndFallbacks(t *testing.T) {
 	primary := "https://api.opencdp.io/gateway/data-gateway"
 	urls := cdp.ResolveAllBaseURLs(primary, []string{
-		"https://api.opencdp.com/gateway/data-gateway",
+		"https://api.open-cdp.com/gateway/data-gateway",
 		primary,
 	})
 	assert.Equal(t, []string{
 		"https://api.opencdp.io/gateway/data-gateway",
-		"https://api.opencdp.com/gateway/data-gateway",
+		"https://api.open-cdp.com/gateway/data-gateway",
 	}, urls)
 }
