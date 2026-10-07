@@ -263,12 +263,19 @@ func (c *Client) requestWithFailover(ctx context.Context, method, path string, b
 	return nil, lastErr
 }
 
-// isRetryableSendStatus reports whether a send can safely go to the next host. 502/503 come from the
-// load balancer when it could not reach the gateway; 504 is excluded because the gateway may have
-// queued the message before the proxy gave up. 3xx is excluded because the host may have accepted
-// the send before redirecting.
+// isRetryableSendStatus reports whether a send can safely go to the next host. Cloudflare (in front
+// of the primary host) reports these when it never sent the request to the gateway: 521 refused,
+// 522 connect timeout, 523 unreachable, 525/526 TLS failure. Generic 502/503 are excluded because a
+// proxy can return them after the gateway has already queued the message, 524 because Cloudflare
+// connected and waited for a response, and 3xx because the host may have accepted the send before
+// redirecting.
 func isRetryableSendStatus(status int) bool {
-	return status == http.StatusBadGateway || status == http.StatusServiceUnavailable
+	switch status {
+	case 521, 522, 523, 525, 526:
+		return true
+	default:
+		return false
+	}
 }
 
 // isSafeToRetrySend reports whether err happened before the request reached the server: a DNS

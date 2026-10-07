@@ -3,6 +3,7 @@ package cdp_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -101,20 +102,45 @@ func TestSendWhatsApp_DoesNotFailOverOnClientError(t *testing.T) {
 	assert.Equal(t, int32(0), atomic.LoadInt32(&fallbackHits))
 }
 
-func TestSendWhatsApp_FailsOverOn503(t *testing.T) {
-	var primaryHits, fallbackHits int32
-	primary := countingServer(http.StatusServiceUnavailable, &primaryHits)
-	defer primary.Close()
-	fallback := countingServer(http.StatusOK, &fallbackHits)
-	defer fallback.Close()
+func TestSendWhatsApp_FailsOverWhenCloudflareNeverReachedTheGateway(t *testing.T) {
+	for _, status := range []int{521, 522, 523, 525, 526} {
+		t.Run(fmt.Sprint(status), func(t *testing.T) {
+			var primaryHits, fallbackHits int32
+			primary := countingServer(status, &primaryHits)
+			defer primary.Close()
+			fallback := countingServer(http.StatusOK, &fallbackHits)
+			defer fallback.Close()
 
-	client := cdp.NewClient(cdp.CDPConfig{
-		CDPAPIKey: "key", CDPEndpoint: primary.URL, CDPFallbackEndpoints: []string{fallback.URL}, FailOnException: true,
-	})
-	defer client.Close()
+			client := cdp.NewClient(cdp.CDPConfig{
+				CDPAPIKey: "key", CDPEndpoint: primary.URL, CDPFallbackEndpoints: []string{fallback.URL}, FailOnException: true,
+			})
+			defer client.Close()
 
-	assert.NoError(t, client.SendWhatsApp(context.Background(), whatsAppPayload()))
-	assert.Equal(t, int32(1), atomic.LoadInt32(&fallbackHits))
+			assert.NoError(t, client.SendWhatsApp(context.Background(), whatsAppPayload()))
+			assert.Equal(t, int32(1), atomic.LoadInt32(&fallbackHits))
+		})
+	}
+}
+
+func TestSendWhatsApp_DoesNotFailOverWhenTheGatewayMayHaveQueuedIt(t *testing.T) {
+	for _, status := range []int{500, 502, 503, 504, 520, 524} {
+		t.Run(fmt.Sprint(status), func(t *testing.T) {
+			var primaryHits, fallbackHits int32
+			primary := countingServer(status, &primaryHits)
+			defer primary.Close()
+			fallback := countingServer(http.StatusOK, &fallbackHits)
+			defer fallback.Close()
+
+			client := cdp.NewClient(cdp.CDPConfig{
+				CDPAPIKey: "key", CDPEndpoint: primary.URL, CDPFallbackEndpoints: []string{fallback.URL}, FailOnException: true,
+			})
+			defer client.Close()
+
+			assert.Error(t, client.SendWhatsApp(context.Background(), whatsAppPayload()))
+			assert.Equal(t, int32(1), atomic.LoadInt32(&primaryHits))
+			assert.Equal(t, int32(0), atomic.LoadInt32(&fallbackHits))
+		})
+	}
 }
 
 func TestSendWhatsApp_FailsOverWhenPrimaryRefusesConnection(t *testing.T) {
