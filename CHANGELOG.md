@@ -10,9 +10,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `SendWhatsApp()` - Send WhatsApp messages using a saved WhatsApp transactional
 - `Identifiers.CdpID` (`cdp_id`)
+- Email attachments: `EmailPayload.Attach()` and `EmailPayload.AttachFile()` base64-encode files for you, and `SendEmail()` validates attachments against the gateway's limits (at most 5 files, 2 MB decoded in total) before sending
 
 ### Changed
 
+- `Attachments` is now supported by the backend and no longer logs an "unsupported fields" warning
 - Message sends (`/v1/send/*`) now fail over to a fallback gateway host only when the primary provably did not process the request (connection refused, DNS failure, HTTP 502/503). Timeouts, 4xx, 500 and 504 are returned without retrying, to avoid delivering the same message twice. Identify, track and device registration are unchanged.
 - Default gateway fallback hosts updated from `api.opencdp.com` / `api.opencdp.xyz` to `api.open-cdp.com` / `api.open-cdp.xyz` (primary remains `api.opencdp.io`)
 

@@ -1,6 +1,12 @@
 package cdp
 
-import "log/slog"
+import (
+	"encoding/base64"
+	"fmt"
+	"log/slog"
+	"os"
+	"path/filepath"
+)
 
 // CDPConfig holds configuration for the CDP client.
 type CDPConfig struct {
@@ -81,7 +87,9 @@ type EmailPayload struct {
 	QueueDraft              bool                   `json:"queue_draft,omitempty"`
 	DisableCSSPreprocessing bool                   `json:"disable_css_preprocessing,omitempty"`
 	Language                string                 `json:"language,omitempty"`
-	Attachments             map[string]string      `json:"attachments,omitempty"`
+	// Attachments maps filename to base64 content. Max 5 files, 2 MB decoded in total.
+	// Use Attach or AttachFile to add files without encoding them yourself.
+	Attachments map[string]string `json:"attachments,omitempty"`
 	// Unsupported fields included for compatibility, will trigger warnings
 	SendAt  int64 `json:"send_at,omitempty"`
 	Tracked bool  `json:"tracked,omitempty"`
@@ -138,4 +146,23 @@ type DevicePayload struct {
 	AppVersion   string                 `json:"appVersion,omitempty"`
 	LastActiveAt string                 `json:"last_active_at,omitempty"`
 	Attributes   map[string]interface{} `json:"attributes,omitempty"`
+}
+
+// Attach adds a file to the email, base64-encoding data. To add content that is already
+// base64, set it on the Attachments map directly.
+func (p *EmailPayload) Attach(filename string, data []byte) {
+	if p.Attachments == nil {
+		p.Attachments = map[string]string{}
+	}
+	p.Attachments[filename] = base64.StdEncoding.EncodeToString(data)
+}
+
+// AttachFile reads the file at path and attaches it under its base name.
+func (p *EmailPayload) AttachFile(path string) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("read attachment %q: %w", path, err)
+	}
+	p.Attach(filepath.Base(path), data)
+	return nil
 }

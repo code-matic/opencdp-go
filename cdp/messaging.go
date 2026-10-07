@@ -44,9 +44,6 @@ func (c *Client) SendEmail(ctx context.Context, payload EmailPayload) error {
 	if payload.Preheader != "" {
 		unsupported = append(unsupported, "preheader")
 	}
-	if len(payload.Attachments) > 0 {
-		unsupported = append(unsupported, "attachments")
-	}
 	if len(unsupported) > 0 {
 		c.logger.Warn("SendEmail contains unsupported fields which will be ignored: " + strings.Join(unsupported, ", ") + ". These are included for future compatibility.")
 	}

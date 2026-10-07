@@ -1,9 +1,16 @@
 package cdp
 
 import (
+	"encoding/base64"
 	"fmt"
 	"regexp"
 	"strings"
+)
+
+// Mirrors the gateway's limits (backend integrations/email-attachments.ts) so bad input fails before a network call.
+const (
+	maxEmailAttachments             = 5
+	maxEmailAttachmentsDecodedBytes = 2 * 1024 * 1024 // 2 MB
 )
 
 var (
@@ -150,6 +157,10 @@ func validateSendEmailRequest(payload EmailPayload) error {
 		return NewCDPValidationError("plaintext_body cannot be empty if provided")
 	}
 
+	if err := validateAttachments(payload.Attachments); err != nil {
+		return err
+	}
+
 	// Type guard to check if it's a template-based request
 	isTemplateRequest := payload.TransactionalMessageID != ""
 
@@ -173,6 +184,48 @@ func validateSendEmailRequest(payload EmailPayload) error {
 	}
 
 	return nil
+}
+
+// validateAttachments validates a filename -> base64 content map against the gateway's limits.
+func validateAttachments(attachments map[string]string) error {
+	if len(attachments) > maxEmailAttachments {
+		return NewCDPValidationError(fmt.Sprintf("attachments may contain at most %d files", maxEmailAttachments))
+	}
+
+	totalDecodedBytes := 0
+	for filename, content := range attachments {
+		if filename == "" || strings.Contains(filename, "/") || strings.Contains(filename, "\\") || strings.Contains(filename, "..") {
+			name := filename
+			if name == "" {
+				name = "(empty)"
+			}
+			return NewCDPValidationError(fmt.Sprintf("invalid attachment filename: %s", name))
+		}
+		if content == "" {
+			return NewCDPValidationError(fmt.Sprintf("attachment %q must be a non-empty base64 string", filename))
+		}
+		decodedBytes := decodedBase64Size(content)
+		if decodedBytes == 0 {
+			return NewCDPValidationError(fmt.Sprintf("attachment %q must be a valid base64 string", filename))
+		}
+		totalDecodedBytes += decodedBytes
+		if totalDecodedBytes > maxEmailAttachmentsDecodedBytes {
+			return NewCDPValidationError(fmt.Sprintf("attachments decoded size exceeds %d bytes (2 MB)", maxEmailAttachmentsDecodedBytes))
+		}
+	}
+	return nil
+}
+
+// decodedBase64Size returns the decoded length of content, or 0 if it is not base64.
+// The gateway decodes leniently (Node's Buffer.from), so padded, unpadded and url-safe forms are all accepted.
+func decodedBase64Size(content string) int {
+	cleaned := strings.Join(strings.Fields(content), "")
+	for _, enc := range []*base64.Encoding{base64.StdEncoding, base64.RawStdEncoding, base64.URLEncoding, base64.RawURLEncoding} {
+		if decoded, err := enc.DecodeString(cleaned); err == nil {
+			return len(decoded)
+		}
+	}
+	return 0
 }
 
 // validateSendPushRequest validates the push notification request.
