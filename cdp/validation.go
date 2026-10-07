@@ -1,14 +1,23 @@
 package cdp
 
 import (
+	"encoding/base64"
 	"fmt"
 	"regexp"
 	"strings"
+	"unicode"
+)
+
+// Mirrors the gateway's limits (backend integrations/email-attachments.ts) so bad input fails before a network call.
+const (
+	maxEmailAttachments             = 5
+	maxEmailAttachmentsDecodedBytes = 2 * 1024 * 1024 // 2 MB
 )
 
 var (
-	emailRegex = regexp.MustCompile(`^[^\s@]+@[^\s@]+\.[^\s@]+$`)
-	phoneRegex = regexp.MustCompile(`^\+[1-9]\d{1,14}$`)
+	emailRegex   = regexp.MustCompile(`^[^\s@]+@[^\s@]+\.[^\s@]+$`)
+	phoneRegex   = regexp.MustCompile(`^\+[1-9]\d{1,14}$`)
+	slotKeyRegex = regexp.MustCompile(`^[1-9]\d*$`)
 )
 
 // validateIdentifier checks if the identifier is non-empty.
@@ -55,7 +64,11 @@ func validateIdentifiers(identifiers Identifiers) error {
 	count := 0
 	hasID := identifiers.ID != ""
 	hasEmail := identifiers.Email != ""
-	hasCioID := identifiers.CioID != ""
+	hasCdpID := identifiers.CdpID != ""
+
+	if identifiers.CioID != "" || identifiers.Phone != "" {
+		return NewCDPValidationError("identifiers.cio_id and identifiers.phone are not supported; use id, email, or cdp_id")
+	}
 
 	if hasID {
 		count++
@@ -66,15 +79,15 @@ func validateIdentifiers(identifiers Identifiers) error {
 			return err
 		}
 	}
-	if hasCioID {
+	if hasCdpID {
 		count++
 	}
 
 	if count == 0 {
-		return NewCDPValidationError("identifiers must contain exactly one of: id, email, or cio_id")
+		return NewCDPValidationError("identifiers must contain exactly one of: id, email, or cdp_id")
 	}
 	if count > 1 {
-		return NewCDPValidationError("identifiers must contain exactly one of: id, email, or cio_id (found multiple)")
+		return NewCDPValidationError("identifiers must contain exactly one of: id, email, or cdp_id (found multiple)")
 	}
 
 	return nil
@@ -145,6 +158,10 @@ func validateSendEmailRequest(payload EmailPayload) error {
 		return NewCDPValidationError("plaintext_body cannot be empty if provided")
 	}
 
+	if err := validateAttachments(payload.Attachments); err != nil {
+		return err
+	}
+
 	// Type guard to check if it's a template-based request
 	isTemplateRequest := payload.TransactionalMessageID != ""
 
@@ -168,6 +185,60 @@ func validateSendEmailRequest(payload EmailPayload) error {
 	}
 
 	return nil
+}
+
+// validateAttachments validates a filename -> base64 content map against the gateway's limits.
+func validateAttachments(attachments map[string]string) error {
+	if len(attachments) > maxEmailAttachments {
+		return NewCDPValidationError(fmt.Sprintf("attachments may contain at most %d files", maxEmailAttachments))
+	}
+
+	totalDecodedBytes := 0
+	for filename, content := range attachments {
+		if filename == "" || strings.Contains(filename, "/") || strings.Contains(filename, "\\") || strings.Contains(filename, "..") {
+			name := filename
+			if name == "" {
+				name = "(empty)"
+			}
+			return NewCDPValidationError(fmt.Sprintf("invalid attachment filename: %s", name))
+		}
+		if content == "" {
+			return NewCDPValidationError(fmt.Sprintf("attachment %q must be a non-empty base64 string", filename))
+		}
+		decodedBytes := decodedBase64Size(content)
+		if decodedBytes == 0 {
+			return NewCDPValidationError(fmt.Sprintf("attachment %q must be a valid base64 string", filename))
+		}
+		totalDecodedBytes += decodedBytes
+		if totalDecodedBytes > maxEmailAttachmentsDecodedBytes {
+			return NewCDPValidationError(fmt.Sprintf("attachments decoded size exceeds %d bytes (2 MB)", maxEmailAttachmentsDecodedBytes))
+		}
+	}
+	return nil
+}
+
+// decodedBase64Size returns the decoded length of content, or 0 if it is not base64.
+// The gateway decodes leniently (Node's Buffer.from), so padded, unpadded and url-safe forms are all accepted.
+func decodedBase64Size(content string) int {
+	// Decoding allocates in proportion to the input, so reject oversized content by its encoded length
+	// first. Counting without allocating keeps a huge Attachments value from costing memory either.
+	encodedLen := 0
+	for _, r := range content {
+		if !unicode.IsSpace(r) {
+			encodedLen++
+		}
+	}
+	if encodedLen > base64.StdEncoding.EncodedLen(maxEmailAttachmentsDecodedBytes) {
+		return maxEmailAttachmentsDecodedBytes + 1
+	}
+
+	cleaned := strings.Join(strings.Fields(content), "")
+	for _, enc := range []*base64.Encoding{base64.StdEncoding, base64.RawStdEncoding, base64.URLEncoding, base64.RawURLEncoding} {
+		if decoded, err := enc.DecodeString(cleaned); err == nil {
+			return len(decoded)
+		}
+	}
+	return 0
 }
 
 // validateSendPushRequest validates the push notification request.
@@ -220,6 +291,42 @@ func validateSendSmsRequest(payload SmsPayload) error {
 	// Validate body field - cannot be empty string if provided
 	if payload.Body != "" && strings.TrimSpace(payload.Body) == "" {
 		return NewCDPValidationError("body cannot be empty if provided")
+	}
+
+	return nil
+}
+
+// validateSendWhatsAppRequest validates the WhatsApp request.
+func validateSendWhatsAppRequest(payload WhatsAppPayload) error {
+	if err := validateIdentifiers(payload.Identifiers); err != nil {
+		return err
+	}
+
+	if payload.TransactionalMessageID == "" {
+		return NewCDPValidationError("transactional_message_id is required")
+	}
+
+	if payload.To != "" {
+		if err := validatePhoneNumber(payload.To); err != nil {
+			return err
+		}
+	}
+
+	if vars := payload.TemplateVariables; vars != nil {
+		sections := []struct {
+			name  string
+			slots map[string]interface{}
+		}{{"header", vars.Header}, {"body", vars.Body}, {"button", vars.Button}}
+		for _, section := range sections {
+			// The gateway sends parameters by position and drops non-numeric button keys.
+			for slot := range section.slots {
+				if !slotKeyRegex.MatchString(slot) {
+					return NewCDPValidationError(fmt.Sprintf(
+						"template_variables.%s keys must be positional slot numbers (\"1\", \"2\", ...), got %q",
+						section.name, slot))
+				}
+			}
+		}
 	}
 
 	return nil

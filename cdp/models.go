@@ -1,6 +1,13 @@
 package cdp
 
-import "log/slog"
+import (
+	"encoding/base64"
+	"fmt"
+	"io"
+	"log/slog"
+	"os"
+	"path/filepath"
+)
 
 // CDPConfig holds configuration for the CDP client.
 type CDPConfig struct {
@@ -38,7 +45,10 @@ type CustomerIOConfig struct {
 type Identifiers struct {
 	ID    string `json:"id,omitempty"`
 	Email string `json:"email,omitempty"`
+	CdpID string `json:"cdp_id,omitempty"`
+	// Deprecated: the gateway does not accept phone as an identifier; requests that set it are rejected.
 	Phone string `json:"phone,omitempty"`
+	// Deprecated: the gateway does not accept cio_id; use CdpID.
 	CioID string `json:"cio_id,omitempty"`
 }
 
@@ -78,7 +88,9 @@ type EmailPayload struct {
 	QueueDraft              bool                   `json:"queue_draft,omitempty"`
 	DisableCSSPreprocessing bool                   `json:"disable_css_preprocessing,omitempty"`
 	Language                string                 `json:"language,omitempty"`
-	Attachments             map[string]string      `json:"attachments,omitempty"`
+	// Attachments maps filename to base64 content. Max 5 files, 2 MB decoded in total.
+	// Use Attach or AttachFile to add files without encoding them yourself.
+	Attachments map[string]string `json:"attachments,omitempty"`
 	// Unsupported fields included for compatibility, will trigger warnings
 	SendAt  int64 `json:"send_at,omitempty"`
 	Tracked bool  `json:"tracked,omitempty"`
@@ -103,6 +115,25 @@ type SmsPayload struct {
 	MessageData            map[string]interface{} `json:"message_data,omitempty"`
 }
 
+// WhatsAppPayload represents the data for sending a WhatsApp message.
+type WhatsAppPayload struct {
+	Identifiers            Identifiers            `json:"identifiers"`
+	TransactionalMessageID string                 `json:"transactional_message_id"`
+	To                     string                 `json:"to,omitempty"`
+	TemplateVariables      *WhatsAppTemplateVars  `json:"template_variables,omitempty"`
+	MessageData            map[string]interface{} `json:"message_data,omitempty"`
+}
+
+// WhatsAppTemplateVars sets template slots by section. Keys are the template's slot numbers
+// ("1", "2", ...) and values may use Liquid, e.g. "{{trigger.order_number}}".
+// When set, it replaces all variables saved on the transactional, so include every section the
+// template needs.
+type WhatsAppTemplateVars struct {
+	Header map[string]interface{} `json:"header,omitempty"`
+	Body   map[string]interface{} `json:"body,omitempty"`
+	Button map[string]interface{} `json:"button,omitempty"`
+}
+
 // DevicePayload represents data for registering a device.
 type DevicePayload struct {
 	Identifier   string                 `json:"identifier"`
@@ -116,4 +147,33 @@ type DevicePayload struct {
 	AppVersion   string                 `json:"appVersion,omitempty"`
 	LastActiveAt string                 `json:"last_active_at,omitempty"`
 	Attributes   map[string]interface{} `json:"attributes,omitempty"`
+}
+
+// Attach adds a file to the email, base64-encoding data and replacing any attachment with the
+// same filename. To add content that is already base64, set it on the Attachments map directly.
+func (p *EmailPayload) Attach(filename string, data []byte) {
+	if p.Attachments == nil {
+		p.Attachments = map[string]string{}
+	}
+	p.Attachments[filename] = base64.StdEncoding.EncodeToString(data)
+}
+
+// AttachFile reads the file at path and attaches it under its base name. Files over the 2 MB
+// attachment limit are rejected without being read into memory.
+func (p *EmailPayload) AttachFile(path string) error {
+	f, err := os.Open(path)
+	if err != nil {
+		return fmt.Errorf("read attachment %q: %w", path, err)
+	}
+	defer f.Close()
+
+	data, err := io.ReadAll(io.LimitReader(f, maxEmailAttachmentsDecodedBytes+1))
+	if err != nil {
+		return fmt.Errorf("read attachment %q: %w", path, err)
+	}
+	if len(data) > maxEmailAttachmentsDecodedBytes {
+		return NewCDPValidationError(fmt.Sprintf("attachment %q exceeds %d bytes (2 MB)", path, maxEmailAttachmentsDecodedBytes))
+	}
+	p.Attach(filepath.Base(path), data)
+	return nil
 }

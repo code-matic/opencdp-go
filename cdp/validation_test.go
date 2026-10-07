@@ -266,3 +266,22 @@ func TestSendSms_IdentifierValidation(t *testing.T) {
 	})
 	assert.Error(t, err)
 }
+
+func TestSendWhatsApp_IdentifierValidation(t *testing.T) {
+	server := setupMockServerForValidation(t, defaultHandlerForValidation(t, "/v1/send/whatsapp", "POST"))
+	defer server.Close()
+
+	client := cdp.NewClient(mockConfig(server.URL, cdp.CDPConfig{CDPAPIKey: "key", FailOnException: true}))
+	defer client.Close()
+
+	err := client.SendWhatsApp(context.Background(), cdp.WhatsAppPayload{
+		Identifiers:            cdp.Identifiers{},
+		TransactionalMessageID: "WA1",
+	})
+	assert.Error(t, err)
+
+	err = client.SendWhatsApp(context.Background(), cdp.WhatsAppPayload{
+		Identifiers: cdp.Identifiers{ID: "user1"},
+	})
+	assert.Error(t, err)
+}

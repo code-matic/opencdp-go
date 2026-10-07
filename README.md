@@ -65,6 +65,44 @@ client.SendPush(ctx, cdp.PushPayload{
 })
 ```
 
+### Email Attachments
+
+Attach up to 5 files (2 MB decoded in total). `Attach` and `AttachFile` base64-encode the content for you:
+
+```go
+payload := cdp.EmailPayload{
+    To: "alice@example.com",
+    Identifiers: cdp.Identifiers{ID: "user-123"},
+    TransactionalMessageID: "INVOICE_EMAIL",
+}
+if err := payload.AttachFile("./invoice.pdf"); err != nil { // named "invoice.pdf"
+    return err
+}
+payload.Attach("notes.txt", []byte("Plain text content"))
+
+client.SendEmail(ctx, payload)
+```
+
+Content that is already base64 can be set on `payload.Attachments` (filename to base64) directly. `SendEmail` validates attachments before sending: at most 5 files, at most 2 MB decoded in total, filenames without `/`, `\` or `..`, and non-empty base64 content. The content type is inferred from the file extension.
+
+### Send WhatsApp
+
+WhatsApp sends use a saved WhatsApp transactional, so `TransactionalMessageID` is required.
+
+```go
+err := client.SendWhatsApp(ctx, cdp.WhatsAppPayload{
+    Identifiers:            cdp.Identifiers{ID: "user-123"},
+    TransactionalMessageID: "ORDER_WHATSAPP",
+    To:                     "+14155551234", // Optional: overrides the profile phone number
+    MessageData:            map[string]interface{}{"order_number": "12345"}, // {{trigger.order_number}} in the template
+})
+```
+
+- **A nil error means the message was queued, not delivered.** Delivery runs asynchronously, so a missing WhatsApp provider, no phone number, or a template rejected by Meta does not fail this call.
+- `TemplateVariables` (`&cdp.WhatsAppTemplateVars{Header: ..., Body: ..., Button: ...}`) sets the template slots from code. Keys must be slot numbers (`"1"`, `"2"`, ...), and values may use Liquid such as `{{customer.first_name}}`. Setting it **replaces all variables saved on the transactional**, so include every section the template needs.
+- Identify the user with exactly one of `ID`, `Email`, or `CdpID`.
+- Sends are not retried on another gateway host after a timeout or an HTTP error other than 502/503, because the message may already have been queued.
+
 ### Configuration Options
 
 | Option | Type | Default | Description |
