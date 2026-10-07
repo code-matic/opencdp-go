@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/codematic/opencdp-go/cdp"
+	"github.com/code-matic/opencdp-go/cdp"
 	"github.com/stretchr/testify/assert"
 )
 

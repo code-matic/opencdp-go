@@ -5,7 +5,7 @@ A Go client library for Codematic's Customer Data Platform (CDP) with optional C
 ## Installation
 
 ```bash
-go get github.com/codematic/opencdp-go
+go get github.com/code-matic/opencdp-go
 ```
 
 ## Usage
@@ -13,7 +13,7 @@ go get github.com/codematic/opencdp-go
 ### Initialization
 
 ```go
-import "github.com/codematic/opencdp-go/cdp"
+import "github.com/code-matic/opencdp-go/cdp"
 
 config := cdp.CDPConfig{
     CDPAPIKey:       "your-api-key",

@@ -6,6 +6,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-07
+
+### Fixed
+
+- The module path is now `github.com/code-matic/opencdp-go`, matching the GitHub repository. Earlier tags declared `github.com/codematic/opencdp-go`, so `go get` could not install them. Update imports to `github.com/code-matic/opencdp-go/cdp`.
+
 ### Added
 
 - `SendWhatsApp()` - Send WhatsApp messages using a saved WhatsApp transactional

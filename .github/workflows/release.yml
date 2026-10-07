@@ -1,0 +1,48 @@
+name: Release
+
+# Runs when a version tag is pushed: make release VERSION=v0.2.0
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write # create the GitHub Release
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+
+      - name: Check tag matches the SDK version constant
+        run: |
+          VERSION="$(sed -n 's/^[[:space:]]*version[[:space:]]*= "\(.*\)"/\1/p' cdp/client.go)"
+          if [ "v$VERSION" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match version \"$VERSION\" in cdp/client.go"
+            exit 1
+          fi
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      - run: go test -race ./...
+
+      - name: Create GitHub Release from the CHANGELOG
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          awk -v v="$VERSION" '
+            index($0, "## [" v "]") == 1 { found = 1; next }
+            found && /^## \[/ { exit }
+            found { print }
+          ' CHANGELOG.md > notes.md
+          if [ ! -s notes.md ]; then
+            echo "::error::CHANGELOG.md has no section for [$VERSION]"
+            exit 1
+          fi
+          gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file notes.md
+
+      # The proxy fetches a version on first request; asking now makes it installable and listed on pkg.go.dev immediately.
+      - name: Request the version from the Go module proxy
+        run: curl -sSf "https://proxy.golang.org/github.com/code-matic/opencdp-go/@v/${GITHUB_REF_NAME}.info"

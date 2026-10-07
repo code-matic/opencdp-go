@@ -6,7 +6,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/codematic/opencdp-go/cdp"
+	"github.com/code-matic/opencdp-go/cdp"
 )
 
 func main() {

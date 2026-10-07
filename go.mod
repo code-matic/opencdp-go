@@ -1,4 +1,4 @@
-module github.com/codematic/opencdp-go
+module github.com/code-matic/opencdp-go
 
 go 1.21
 
