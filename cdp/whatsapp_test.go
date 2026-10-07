@@ -156,3 +156,48 @@ func TestSendWhatsApp_DoesNotFailOverAfterTimeout(t *testing.T) {
 	assert.Error(t, client.SendWhatsApp(context.Background(), whatsAppPayload()))
 	assert.Equal(t, int32(0), atomic.LoadInt32(&fallbackHits))
 }
+
+func TestSendWhatsApp_DoesNotFollowRedirectOrFailOver(t *testing.T) {
+	// The redirect target refuses connections. If the SDK followed the redirect, that dial failure
+	// would look like the primary was never reached and the send would be retried on the fallback.
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	assert.NoError(t, err)
+	deadURL := "http://" + listener.Addr().String()
+	listener.Close()
+
+	var primaryHits, fallbackHits int32
+	primary := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&primaryHits, 1)
+		http.Redirect(w, r, deadURL+r.URL.Path, http.StatusTemporaryRedirect)
+	}))
+	defer primary.Close()
+	fallback := countingServer(http.StatusOK, &fallbackHits)
+	defer fallback.Close()
+
+	client := cdp.NewClient(cdp.CDPConfig{
+		CDPAPIKey: "key", CDPEndpoint: primary.URL, CDPFallbackEndpoints: []string{fallback.URL}, FailOnException: true,
+	})
+	defer client.Close()
+
+	err = client.SendWhatsApp(context.Background(), whatsAppPayload())
+
+	assert.ErrorContains(t, err, "307")
+	assert.Equal(t, int32(1), atomic.LoadInt32(&primaryHits))
+	assert.Equal(t, int32(0), atomic.LoadInt32(&fallbackHits))
+}
+
+func TestIdentify_StillFollowsRedirects(t *testing.T) {
+	var targetHits int32
+	target := countingServer(http.StatusOK, &targetHits)
+	defer target.Close()
+	primary := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, target.URL+r.URL.Path, http.StatusTemporaryRedirect)
+	}))
+	defer primary.Close()
+
+	client := cdp.NewClient(mockConfig(primary.URL, cdp.CDPConfig{CDPAPIKey: "key", FailOnException: true}))
+	defer client.Close()
+
+	assert.NoError(t, client.Identify(context.Background(), "u1", map[string]interface{}{"plan": "pro"}))
+	assert.Equal(t, int32(1), atomic.LoadInt32(&targetHits))
+}

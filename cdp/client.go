@@ -24,9 +24,11 @@ type Client struct {
 	config     CDPConfig
 	baseURLs   []string
 	httpClient *http.Client
-	logger     *Logger
-	cio        *CIOIntegration
-	semaphore  chan struct{}
+	// sendHTTPClient never follows redirects; see isSafeToRetrySend.
+	sendHTTPClient *http.Client
+	logger         *Logger
+	cio            *CIOIntegration
+	semaphore      chan struct{}
 }
 
 // NewClient creates a new CDP Client instance.
@@ -55,13 +57,24 @@ func NewClient(config CDPConfig) *Client {
 		Transport: transport,
 	}
 
+	// A followed redirect makes a dial or DNS failure on the redirect target look like the original
+	// host was never reached, so failover would send the message twice. Sends get the 3xx back instead.
+	sendHTTPClient := &http.Client{
+		Timeout:   time.Duration(config.Timeout) * time.Millisecond,
+		Transport: transport,
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+
 	return &Client{
-		config:     config,
-		baseURLs:   baseURLs,
-		httpClient: httpClient,
-		logger:     logger,
-		cio:        NewCIOIntegration(&config),
-		semaphore:  make(chan struct{}, config.MaxConcurrentRequests),
+		config:         config,
+		baseURLs:       baseURLs,
+		httpClient:     httpClient,
+		sendHTTPClient: sendHTTPClient,
+		logger:         logger,
+		cio:            NewCIOIntegration(&config),
+		semaphore:      make(chan struct{}, config.MaxConcurrentRequests),
 	}
 }
 
@@ -220,7 +233,7 @@ func (c *Client) requestWithFailover(ctx context.Context, method, path string, b
 		if jsonBody != nil {
 			req.Header.Set("Content-Type", "application/json")
 		}
-		resp, err := c.doRequest(req)
+		resp, err := c.doRequest(req, sendSafe)
 		if err != nil {
 			lastErr = err
 			if sendSafe && !isSafeToRetrySend(err) {
@@ -252,14 +265,16 @@ func (c *Client) requestWithFailover(ctx context.Context, method, path string, b
 
 // isRetryableSendStatus reports whether a send can safely go to the next host. 502/503 come from the
 // load balancer when it could not reach the gateway; 504 is excluded because the gateway may have
-// queued the message before the proxy gave up.
+// queued the message before the proxy gave up. 3xx is excluded because the host may have accepted
+// the send before redirecting.
 func isRetryableSendStatus(status int) bool {
 	return status == http.StatusBadGateway || status == http.StatusServiceUnavailable
 }
 
 // isSafeToRetrySend reports whether err happened before the request reached the server: a DNS
 // failure or a failed dial (including a dial timeout). Read timeouts and resets are excluded
-// because the request may already have been accepted.
+// because the request may already have been accepted. This only holds because sends use
+// sendHTTPClient, which never follows redirects, so the failed dial is always to the original host.
 func isSafeToRetrySend(err error) bool {
 	var dnsErr *net.DNSError
 	if errors.As(err, &dnsErr) {
@@ -269,7 +284,7 @@ func isSafeToRetrySend(err error) bool {
 	return errors.As(err, &opErr) && opErr.Op == "dial"
 }
 
-func (c *Client) doRequest(req *http.Request) (*http.Response, error) {
+func (c *Client) doRequest(req *http.Request, sendSafe bool) (*http.Response, error) {
 	select {
 	case c.semaphore <- struct{}{}:
 		defer func() { <-c.semaphore }()
@@ -280,6 +295,9 @@ func (c *Client) doRequest(req *http.Request) (*http.Response, error) {
 	req.Header.Set("Authorization", c.config.CDPAPIKey)
 	req.Header.Set("User-Agent", fmt.Sprintf("opencdp-go-sdk/%s", version))
 
+	if sendSafe {
+		return c.sendHTTPClient.Do(req)
+	}
 	return c.httpClient.Do(req)
 }
 

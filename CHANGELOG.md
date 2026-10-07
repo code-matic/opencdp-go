@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `Attachments` is now supported by the backend and no longer logs an "unsupported fields" warning
 - Message sends (`/v1/send/*`) now fail over to a fallback gateway host only when the primary provably did not process the request (connection refused, DNS failure, HTTP 502/503). Timeouts, 4xx, 500 and 504 are returned without retrying, to avoid delivering the same message twice. Identify, track and device registration are unchanged.
+- Message sends no longer follow HTTP redirects. A 3xx is returned as an error and is not retried on a fallback host, because the original host may already have accepted the message.
 - Default gateway fallback hosts updated from `api.opencdp.com` / `api.opencdp.xyz` to `api.open-cdp.com` / `api.open-cdp.xyz` (primary remains `api.opencdp.io`)
 
 ### Deprecated
