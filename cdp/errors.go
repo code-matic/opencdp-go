@@ -55,6 +55,16 @@ func NewCDPSmsError(message string, cause error) *CDPSmsError {
 	return &CDPSmsError{NewCDPError("SMS_ERROR", message, cause)}
 }
 
+// CDPWhatsAppError represents an error sending WhatsApp.
+type CDPWhatsAppError struct {
+	*CDPError
+}
+
+// NewCDPWhatsAppError creates a new CDPWhatsAppError.
+func NewCDPWhatsAppError(message string, cause error) *CDPWhatsAppError {
+	return &CDPWhatsAppError{NewCDPError("WHATSAPP_ERROR", message, cause)}
+}
+
 // CDPValidationError represents an input validation error.
 type CDPValidationError struct {
 	*CDPError

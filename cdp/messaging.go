@@ -58,7 +58,7 @@ func (c *Client) SendEmail(ctx context.Context, payload EmailPayload) error {
 
 	c.logger.Debug("Sending email", "to", payload.To)
 
-	if err := c.post(ctx, "/v1/send/email", payload); err != nil {
+	if err := c.postSend(ctx, "/v1/send/email", payload); err != nil {
 		return c.handleError(ctx, NewCDPEmailError("Failed to send email", err), "SendEmail failed")
 	}
 
@@ -79,7 +79,7 @@ func (c *Client) SendPush(ctx context.Context, payload PushPayload) error {
 
 	c.logger.Debug("Sending push notification", "transactional_message_id", payload.TransactionalMessageID)
 
-	if err := c.post(ctx, "/v1/send/push", payload); err != nil {
+	if err := c.postSend(ctx, "/v1/send/push", payload); err != nil {
 		return c.handleError(ctx, NewCDPPushError("Failed to send push", err), "SendPush failed")
 	}
 
@@ -95,8 +95,23 @@ func (c *Client) SendSms(ctx context.Context, payload SmsPayload) error {
 
 	c.logger.Debug("Sending SMS")
 
-	if err := c.post(ctx, "/v1/send/sms", payload); err != nil {
+	if err := c.postSend(ctx, "/v1/send/sms", payload); err != nil {
 		return c.handleError(ctx, NewCDPSmsError("Failed to send SMS", err), "SendSms failed")
+	}
+
+	return nil
+}
+
+// SendWhatsApp sends a WhatsApp message.
+func (c *Client) SendWhatsApp(ctx context.Context, payload WhatsAppPayload) error {
+	if err := validateSendWhatsAppRequest(payload); err != nil {
+		return c.handleError(ctx, err, "Validation failed for SendWhatsApp")
+	}
+
+	c.logger.Debug("Sending WhatsApp", "transactional_message_id", payload.TransactionalMessageID)
+
+	if err := c.postSend(ctx, "/v1/send/whatsapp", payload); err != nil {
+		return c.handleError(ctx, NewCDPWhatsAppError("Failed to send WhatsApp", err), "SendWhatsApp failed")
 	}
 
 	return nil

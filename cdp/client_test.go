@@ -141,6 +141,23 @@ func TestSendSms_Success(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+func TestSendWhatsApp_Success(t *testing.T) {
+	server := setupMockServer(t, defaultHandler(t, "/v1/send/whatsapp", "POST"))
+	defer server.Close()
+
+	client := cdp.NewClient(mockConfig(server.URL, cdp.CDPConfig{CDPAPIKey: "key"}))
+	defer client.Close()
+
+	payload := cdp.WhatsAppPayload{
+		Identifiers:            cdp.Identifiers{ID: "u1"},
+		TransactionalMessageID: "WA_1",
+		To:                     "+14155551234",
+		TemplateVariables:      &cdp.WhatsAppTemplateVars{Body: map[string]interface{}{"1": "Jane"}},
+	}
+	err := client.SendWhatsApp(context.Background(), payload)
+	assert.NoError(t, err)
+}
+
 func TestPing_Success(t *testing.T) {
 	server := setupMockServer(t, func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "/v1/health/ping", r.URL.Path)

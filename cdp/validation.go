@@ -7,8 +7,9 @@ import (
 )
 
 var (
-	emailRegex = regexp.MustCompile(`^[^\s@]+@[^\s@]+\.[^\s@]+$`)
-	phoneRegex = regexp.MustCompile(`^\+[1-9]\d{1,14}$`)
+	emailRegex   = regexp.MustCompile(`^[^\s@]+@[^\s@]+\.[^\s@]+$`)
+	phoneRegex   = regexp.MustCompile(`^\+[1-9]\d{1,14}$`)
+	slotKeyRegex = regexp.MustCompile(`^[1-9]\d*$`)
 )
 
 // validateIdentifier checks if the identifier is non-empty.
@@ -55,7 +56,11 @@ func validateIdentifiers(identifiers Identifiers) error {
 	count := 0
 	hasID := identifiers.ID != ""
 	hasEmail := identifiers.Email != ""
-	hasCioID := identifiers.CioID != ""
+	hasCdpID := identifiers.CdpID != ""
+
+	if identifiers.CioID != "" || identifiers.Phone != "" {
+		return NewCDPValidationError("identifiers.cio_id and identifiers.phone are not supported; use id, email, or cdp_id")
+	}
 
 	if hasID {
 		count++
@@ -66,15 +71,15 @@ func validateIdentifiers(identifiers Identifiers) error {
 			return err
 		}
 	}
-	if hasCioID {
+	if hasCdpID {
 		count++
 	}
 
 	if count == 0 {
-		return NewCDPValidationError("identifiers must contain exactly one of: id, email, or cio_id")
+		return NewCDPValidationError("identifiers must contain exactly one of: id, email, or cdp_id")
 	}
 	if count > 1 {
-		return NewCDPValidationError("identifiers must contain exactly one of: id, email, or cio_id (found multiple)")
+		return NewCDPValidationError("identifiers must contain exactly one of: id, email, or cdp_id (found multiple)")
 	}
 
 	return nil
@@ -220,6 +225,42 @@ func validateSendSmsRequest(payload SmsPayload) error {
 	// Validate body field - cannot be empty string if provided
 	if payload.Body != "" && strings.TrimSpace(payload.Body) == "" {
 		return NewCDPValidationError("body cannot be empty if provided")
+	}
+
+	return nil
+}
+
+// validateSendWhatsAppRequest validates the WhatsApp request.
+func validateSendWhatsAppRequest(payload WhatsAppPayload) error {
+	if err := validateIdentifiers(payload.Identifiers); err != nil {
+		return err
+	}
+
+	if payload.TransactionalMessageID == "" {
+		return NewCDPValidationError("transactional_message_id is required")
+	}
+
+	if payload.To != "" {
+		if err := validatePhoneNumber(payload.To); err != nil {
+			return err
+		}
+	}
+
+	if vars := payload.TemplateVariables; vars != nil {
+		sections := []struct {
+			name  string
+			slots map[string]interface{}
+		}{{"header", vars.Header}, {"body", vars.Body}, {"button", vars.Button}}
+		for _, section := range sections {
+			// The gateway sends parameters by position and drops non-numeric button keys.
+			for slot := range section.slots {
+				if !slotKeyRegex.MatchString(slot) {
+					return NewCDPValidationError(fmt.Sprintf(
+						"template_variables.%s keys must be positional slot numbers (\"1\", \"2\", ...), got %q",
+						section.name, slot))
+				}
+			}
+		}
 	}
 
 	return nil

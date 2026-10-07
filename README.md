@@ -65,6 +65,24 @@ client.SendPush(ctx, cdp.PushPayload{
 })
 ```
 
+### Send WhatsApp
+
+WhatsApp sends use a saved WhatsApp transactional, so `TransactionalMessageID` is required.
+
+```go
+err := client.SendWhatsApp(ctx, cdp.WhatsAppPayload{
+    Identifiers:            cdp.Identifiers{ID: "user-123"},
+    TransactionalMessageID: "ORDER_WHATSAPP",
+    To:                     "+14155551234", // Optional: overrides the profile phone number
+    MessageData:            map[string]interface{}{"order_number": "12345"}, // {{trigger.order_number}} in the template
+})
+```
+
+- **A nil error means the message was queued, not delivered.** Delivery runs asynchronously, so a missing WhatsApp provider, no phone number, or a template rejected by Meta does not fail this call.
+- `TemplateVariables` (`&cdp.WhatsAppTemplateVars{Header: ..., Body: ..., Button: ...}`) sets the template slots from code. Keys must be slot numbers (`"1"`, `"2"`, ...), and values may use Liquid such as `{{customer.first_name}}`. Setting it **replaces all variables saved on the transactional**, so include every section the template needs.
+- Identify the user with exactly one of `ID`, `Email`, or `CdpID`.
+- Sends are not retried on another gateway host after a timeout or an HTTP error other than 502/503, because the message may already have been queued.
+
 ### Configuration Options
 
 | Option | Type | Default | Description |

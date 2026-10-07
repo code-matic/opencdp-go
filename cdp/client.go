@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"time"
 )
@@ -75,7 +77,7 @@ func (c *Client) Close() {
 // Ping checks the health of the CDP connection.
 func (c *Client) Ping(ctx context.Context) error {
 	c.logger.Debug("Pinging CDP service")
-	resp, err := c.requestWithFailover(ctx, "GET", "/v1/health/ping", nil)
+	resp, err := c.requestWithFailover(ctx, "GET", "/v1/health/ping", nil, false)
 	if err != nil {
 		return c.handleError(ctx, err, "Ping request failed")
 	}
@@ -173,7 +175,17 @@ func (c *Client) RegisterDevice(ctx context.Context, payload DevicePayload) erro
 }
 
 func (c *Client) post(ctx context.Context, path string, body interface{}) error {
-	resp, err := c.requestWithFailover(ctx, "POST", path, body)
+	return c.doPost(ctx, path, body, false)
+}
+
+// postSend is post for message sends. Sends are not idempotent, so it only fails over when the
+// current host provably never processed the request; see isSafeToRetrySend.
+func (c *Client) postSend(ctx context.Context, path string, body interface{}) error {
+	return c.doPost(ctx, path, body, true)
+}
+
+func (c *Client) doPost(ctx context.Context, path string, body interface{}, sendSafe bool) error {
+	resp, err := c.requestWithFailover(ctx, "POST", path, body, sendSafe)
 	if err != nil {
 		return err
 	}
@@ -185,7 +197,7 @@ func (c *Client) post(ctx context.Context, path string, body interface{}) error 
 	return nil
 }
 
-func (c *Client) requestWithFailover(ctx context.Context, method, path string, body interface{}) (*http.Response, error) {
+func (c *Client) requestWithFailover(ctx context.Context, method, path string, body interface{}, sendSafe bool) (*http.Response, error) {
 	var jsonBody []byte
 	var err error
 	if body != nil {
@@ -211,6 +223,9 @@ func (c *Client) requestWithFailover(ctx context.Context, method, path string, b
 		resp, err := c.doRequest(req)
 		if err != nil {
 			lastErr = err
+			if sendSafe && !isSafeToRetrySend(err) {
+				return nil, err
+			}
 			if c.config.Debug {
 				c.logger.Debug("Gateway unreachable", "baseURL", baseURL, "error", err)
 			}
@@ -222,6 +237,9 @@ func (c *Client) requestWithFailover(ctx context.Context, method, path string, b
 		bodyBytes, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
 		lastErr = fmt.Errorf("API error %d: %s", resp.StatusCode, string(bodyBytes))
+		if sendSafe && !isRetryableSendStatus(resp.StatusCode) {
+			return nil, lastErr
+		}
 		if c.config.Debug {
 			c.logger.Debug("Gateway returned error, trying next host", "baseURL", baseURL, "status", resp.StatusCode)
 		}
@@ -230,6 +248,25 @@ func (c *Client) requestWithFailover(ctx context.Context, method, path string, b
 		lastErr = fmt.Errorf("no gateway hosts configured")
 	}
 	return nil, lastErr
+}
+
+// isRetryableSendStatus reports whether a send can safely go to the next host. 502/503 come from the
+// load balancer when it could not reach the gateway; 504 is excluded because the gateway may have
+// queued the message before the proxy gave up.
+func isRetryableSendStatus(status int) bool {
+	return status == http.StatusBadGateway || status == http.StatusServiceUnavailable
+}
+
+// isSafeToRetrySend reports whether err happened before the request reached the server: a DNS
+// failure or a failed dial (including a dial timeout). Read timeouts and resets are excluded
+// because the request may already have been accepted.
+func isSafeToRetrySend(err error) bool {
+	var dnsErr *net.DNSError
+	if errors.As(err, &dnsErr) {
+		return true
+	}
+	var opErr *net.OpError
+	return errors.As(err, &opErr) && opErr.Op == "dial"
 }
 
 func (c *Client) doRequest(req *http.Request) (*http.Response, error) {

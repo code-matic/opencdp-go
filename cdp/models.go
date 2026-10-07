@@ -38,7 +38,10 @@ type CustomerIOConfig struct {
 type Identifiers struct {
 	ID    string `json:"id,omitempty"`
 	Email string `json:"email,omitempty"`
+	CdpID string `json:"cdp_id,omitempty"`
+	// Deprecated: the gateway does not accept phone as an identifier; requests that set it are rejected.
 	Phone string `json:"phone,omitempty"`
+	// Deprecated: the gateway does not accept cio_id; use CdpID.
 	CioID string `json:"cio_id,omitempty"`
 }
 
@@ -101,6 +104,25 @@ type SmsPayload struct {
 	TransactionalMessageID string                 `json:"transactional_message_id,omitempty"`
 	Body                   string                 `json:"body,omitempty"`
 	MessageData            map[string]interface{} `json:"message_data,omitempty"`
+}
+
+// WhatsAppPayload represents the data for sending a WhatsApp message.
+type WhatsAppPayload struct {
+	Identifiers            Identifiers            `json:"identifiers"`
+	TransactionalMessageID string                 `json:"transactional_message_id"`
+	To                     string                 `json:"to,omitempty"`
+	TemplateVariables      *WhatsAppTemplateVars  `json:"template_variables,omitempty"`
+	MessageData            map[string]interface{} `json:"message_data,omitempty"`
+}
+
+// WhatsAppTemplateVars sets template slots by section. Keys are the template's slot numbers
+// ("1", "2", ...) and values may use Liquid, e.g. "{{trigger.order_number}}".
+// When set, it replaces all variables saved on the transactional, so include every section the
+// template needs.
+type WhatsAppTemplateVars struct {
+	Header map[string]interface{} `json:"header,omitempty"`
+	Body   map[string]interface{} `json:"body,omitempty"`
+	Button map[string]interface{} `json:"button,omitempty"`
 }
 
 // DevicePayload represents data for registering a device.
