@@ -103,7 +103,7 @@ func TestSendWhatsApp_DoesNotFailOverOnClientError(t *testing.T) {
 }
 
 func TestSendWhatsApp_FailsOverWhenCloudflareNeverReachedTheGateway(t *testing.T) {
-	for _, status := range []int{521, 522, 523, 525, 526} {
+	for _, status := range []int{521, 523, 525, 526} {
 		t.Run(fmt.Sprint(status), func(t *testing.T) {
 			var primaryHits, fallbackHits int32
 			primary := countingServer(status, &primaryHits)
@@ -123,7 +123,7 @@ func TestSendWhatsApp_FailsOverWhenCloudflareNeverReachedTheGateway(t *testing.T
 }
 
 func TestSendWhatsApp_DoesNotFailOverWhenTheGatewayMayHaveQueuedIt(t *testing.T) {
-	for _, status := range []int{500, 502, 503, 504, 520, 524} {
+	for _, status := range []int{500, 502, 503, 504, 520, 522, 524} {
 		t.Run(fmt.Sprint(status), func(t *testing.T) {
 			var primaryHits, fallbackHits int32
 			primary := countingServer(status, &primaryHits)
