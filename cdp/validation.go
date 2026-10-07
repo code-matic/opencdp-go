@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"unicode"
 )
 
 // Mirrors the gateway's limits (backend integrations/email-attachments.ts) so bad input fails before a network call.
@@ -219,6 +220,18 @@ func validateAttachments(attachments map[string]string) error {
 // decodedBase64Size returns the decoded length of content, or 0 if it is not base64.
 // The gateway decodes leniently (Node's Buffer.from), so padded, unpadded and url-safe forms are all accepted.
 func decodedBase64Size(content string) int {
+	// Decoding allocates in proportion to the input, so reject oversized content by its encoded length
+	// first. Counting without allocating keeps a huge Attachments value from costing memory either.
+	encodedLen := 0
+	for _, r := range content {
+		if !unicode.IsSpace(r) {
+			encodedLen++
+		}
+	}
+	if encodedLen > base64.StdEncoding.EncodedLen(maxEmailAttachmentsDecodedBytes) {
+		return maxEmailAttachmentsDecodedBytes + 1
+	}
+
 	cleaned := strings.Join(strings.Fields(content), "")
 	for _, enc := range []*base64.Encoding{base64.StdEncoding, base64.RawStdEncoding, base64.URLEncoding, base64.RawURLEncoding} {
 		if decoded, err := enc.DecodeString(cleaned); err == nil {

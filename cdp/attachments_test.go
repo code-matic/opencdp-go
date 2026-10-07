@@ -134,3 +134,61 @@ func TestEmailPayload_AttachFile_MissingFile(t *testing.T) {
 	assert.True(t, strings.Contains(err.Error(), "missing.pdf"))
 	assert.Nil(t, payload.Attachments)
 }
+
+func TestSendEmail_Attachments_RejectsOversizedContentWithoutDecoding(t *testing.T) {
+	server := setupMockServer(t, defaultHandler(t, "/v1/send/email", "POST"))
+	defer server.Close()
+
+	client := cdp.NewClient(mockConfig(server.URL, cdp.CDPConfig{CDPAPIKey: "key", FailOnException: true}))
+	defer client.Close()
+
+	// 64 MB of encoded content: rejected on its length, never decoded.
+	huge := strings.Repeat("A", 64*1024*1024)
+	err := client.SendEmail(context.Background(), attachmentEmail(map[string]string{"huge.bin": huge}))
+
+	assert.ErrorContains(t, err, "attachments decoded size exceeds 2097152 bytes (2 MB)")
+}
+
+func TestSendEmail_Attachments_AcceptsExactlyTwoMegabytes(t *testing.T) {
+	server := setupMockServer(t, defaultHandler(t, "/v1/send/email", "POST"))
+	defer server.Close()
+
+	client := cdp.NewClient(mockConfig(server.URL, cdp.CDPConfig{CDPAPIKey: "key", FailOnException: true}))
+	defer client.Close()
+
+	exact := base64.StdEncoding.EncodeToString(make([]byte, 2*1024*1024))
+	// Line-wrapped base64 (as MIME tools produce) must not count whitespace toward the limit.
+	var wrapped strings.Builder
+	for i := 0; i < len(exact); i += 76 {
+		wrapped.WriteString(exact[i:min(i+76, len(exact))])
+		wrapped.WriteString("\r\n")
+	}
+
+	assert.NoError(t, client.SendEmail(context.Background(), attachmentEmail(map[string]string{"exact.bin": exact})))
+	assert.NoError(t, client.SendEmail(context.Background(), attachmentEmail(map[string]string{"wrapped.bin": wrapped.String()})))
+}
+
+func TestEmailPayload_AttachFile_RejectsFilesOverTheLimit(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "big.bin")
+	f, err := os.Create(path)
+	require.NoError(t, err)
+	// Sparse file: 1 GB on paper, so the test shows the SDK does not read it all.
+	require.NoError(t, f.Truncate(1<<30))
+	require.NoError(t, f.Close())
+	payload := attachmentEmail(nil)
+
+	err = payload.AttachFile(path)
+
+	assert.ErrorContains(t, err, "exceeds 2097152 bytes (2 MB)")
+	assert.Nil(t, payload.Attachments)
+}
+
+func TestEmailPayload_AttachFile_AcceptsExactlyTwoMegabytes(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "exact.bin")
+	require.NoError(t, os.WriteFile(path, make([]byte, 2*1024*1024), 0o600))
+	payload := attachmentEmail(nil)
+
+	require.NoError(t, payload.AttachFile(path))
+
+	assert.Len(t, payload.Attachments["exact.bin"], base64.StdEncoding.EncodedLen(2*1024*1024))
+}

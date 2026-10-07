@@ -3,6 +3,7 @@ package cdp
 import (
 	"encoding/base64"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -148,8 +149,8 @@ type DevicePayload struct {
 	Attributes   map[string]interface{} `json:"attributes,omitempty"`
 }
 
-// Attach adds a file to the email, base64-encoding data. To add content that is already
-// base64, set it on the Attachments map directly.
+// Attach adds a file to the email, base64-encoding data and replacing any attachment with the
+// same filename. To add content that is already base64, set it on the Attachments map directly.
 func (p *EmailPayload) Attach(filename string, data []byte) {
 	if p.Attachments == nil {
 		p.Attachments = map[string]string{}
@@ -157,11 +158,21 @@ func (p *EmailPayload) Attach(filename string, data []byte) {
 	p.Attachments[filename] = base64.StdEncoding.EncodeToString(data)
 }
 
-// AttachFile reads the file at path and attaches it under its base name.
+// AttachFile reads the file at path and attaches it under its base name. Files over the 2 MB
+// attachment limit are rejected without being read into memory.
 func (p *EmailPayload) AttachFile(path string) error {
-	data, err := os.ReadFile(path)
+	f, err := os.Open(path)
 	if err != nil {
 		return fmt.Errorf("read attachment %q: %w", path, err)
+	}
+	defer f.Close()
+
+	data, err := io.ReadAll(io.LimitReader(f, maxEmailAttachmentsDecodedBytes+1))
+	if err != nil {
+		return fmt.Errorf("read attachment %q: %w", path, err)
+	}
+	if len(data) > maxEmailAttachmentsDecodedBytes {
+		return NewCDPValidationError(fmt.Sprintf("attachment %q exceeds %d bytes (2 MB)", path, maxEmailAttachmentsDecodedBytes))
 	}
 	p.Attach(filepath.Base(path), data)
 	return nil
